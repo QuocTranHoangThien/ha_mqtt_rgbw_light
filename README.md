@@ -31,8 +31,8 @@ light:
   optimistic: false
 ```
 
-##Unreasonably Mundane - v0.1 - 2017/01
+##Unreasonably Mundane - v0.2 - 2017/01
 ##ToDo:
 - Major code cleanup
 - Add Motion Sensor as seperate MQTT sensor
-- Shortest transition path for Hue
+- ~~Shortest transition path for Hue~~

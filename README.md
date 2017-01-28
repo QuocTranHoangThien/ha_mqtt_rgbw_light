@@ -1,5 +1,3 @@
-# ha_mqtt_rgbw_light
-
 ##MQTT RGBW Light for Home-Assistant Using PCA9685 PWM Controller - NodeMCU (ESP8266)
    https://home-assistant.io/components/light.mqtt/
 

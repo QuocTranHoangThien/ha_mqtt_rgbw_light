@@ -25,11 +25,10 @@
       rgb_command_topic: 'kitchen/rgbw1/rgb/set'
       brightness_scale: 4095
       optimistic: false
-   Unreasonably Mundane - v0.1 - 2017/01
+   Unreasonably Mundane - v0.2 - 2017/01
    ToDo:
       - Major code cleanup
       - Add Motion Sensor as seperate MQTT sensor
-      - Shortest transition path for Hue
 */
 
 #include <ESP8266WiFi.h>
@@ -123,7 +122,18 @@ void setColor(uint16_t p_red, uint16_t p_green, uint16_t p_blue) {
   t_hsi_saturation = HSItemp[1];
   t_hsi_intensity = brightness;
   if(t_hsi_hue != m_hsi_hue) {
-    t_hsi_hue_increment = (t_hsi_hue - m_hsi_hue) / (float)transitionSteps;
+    float huediff = t_hsi_hue - m_hsi_hue;
+    if(abs(huediff) > 180){
+      if(t_hsi_hue > m_hsi_hue){
+        huediff = 360 - t_hsi_hue + m_hsi_hue;
+        t_hsi_hue_increment = (huediff / (float)transitionSteps) * -1;
+      } else {
+        huediff = 360 - m_hsi_hue + t_hsi_hue;
+        t_hsi_hue_increment = huediff / (float)transitionSteps;
+      }
+    } else {
+      t_hsi_hue_increment = huediff / (float)transitionSteps;
+    }
   }
   if(t_hsi_saturation != m_hsi_saturation) {
     t_hsi_saturation_increment = (t_hsi_saturation - m_hsi_saturation) / (float)transitionSteps;
@@ -136,6 +146,12 @@ void setColor(uint16_t p_red, uint16_t p_green, uint16_t p_blue) {
 void activateColor(float H, float S, float I) {
   int RGBWtemp[4];
   uint16_t p_red,p_green,p_blue,p_white;
+  if(H>360) {
+    H = H - 360;
+  }
+  if(H<0) {
+    H = H + 360;
+  }
   hsi2rgbw(H,S,I,RGBWtemp);
   p_red = RGBWtemp[0];
   p_green = RGBWtemp[1];

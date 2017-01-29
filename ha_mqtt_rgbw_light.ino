@@ -25,10 +25,19 @@
       rgb_command_topic: 'kitchen/rgbw1/rgb/set'
       brightness_scale: 4095
       optimistic: false
-   Unreasonably Mundane - v0.2 - 2017/01
+	binary_sensor:
+      platform: mqtt
+      state_topic: "kitchen/pir/status"
+      name: "Kitchen Motion"
+      qos: 0
+      payload_on: "ON"
+      payload_off: "OFF"
+      sendor_class: motion
+
+   Unreasonably Mundane - v0.21 - 2017/01
    ToDo:
       - Major code cleanup
-      - Add Motion Sensor as seperate MQTT sensor
+      - Add local operation mode(s) if MQTT fails
 */
 
 #include <ESP8266WiFi.h>
@@ -72,6 +81,8 @@ const PROGMEM char* MQTT_LIGHT_RGB_COMMAND_TOPIC = "kitchen/rgbw1/rgb/set";
 const PROGMEM char* LIGHT_ON = "ON";
 const PROGMEM char* LIGHT_OFF = "OFF";
 
+const PROGMEM char* MQTT_PIR_STATE_TOPIC = "kitchen/pir/status";
+
 // variables used to store the state, the brightness and the color of the light
 boolean m_rgb_state = false;
 uint16_t m_rgb_brightness = 4095;
@@ -104,23 +115,22 @@ const PROGMEM uint8_t i2cSCL = 14;
 const uint8_t MSG_BUFFER_SIZE = 20;
 char m_msg_buffer[MSG_BUFFER_SIZE]; 
 
+int pirPin = 13; // Input for HC-S501
+int pirValue = LOW; // Place to store read PIR Value
+
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
 // function called to adapt the brightness and the color of the led
 void setColor(uint16_t p_red, uint16_t p_green, uint16_t p_blue) {
-  uint16_t p_white;
   float HSItemp[3];
-  int RGBWtemp[4];
-  // convert the brightness in % (0-100%) into a digital value (0-255)
-  float brightness = t_hsi_intensity;
+  // if setting 0,0,0 intensity should be 0
   if(p_red == 0 && p_green == 0 && p_blue == 0) {
-    brightness = 0;
+    t_hsi_intensity = 0;
   }
   rgb2hsi(p_red,p_green,p_blue,HSItemp);
   t_hsi_hue = HSItemp[0];
   t_hsi_saturation = HSItemp[1];
-  t_hsi_intensity = brightness;
   if(t_hsi_hue != m_hsi_hue) {
     float huediff = t_hsi_hue - m_hsi_hue;
     if(abs(huediff) > 180){
@@ -146,12 +156,7 @@ void setColor(uint16_t p_red, uint16_t p_green, uint16_t p_blue) {
 void activateColor(float H, float S, float I) {
   int RGBWtemp[4];
   uint16_t p_red,p_green,p_blue,p_white;
-  if(H>360) {
-    H = H - 360;
-  }
-  if(H<0) {
-    H = H + 360;
-  }
+  H = H>=0?(H<=360?H:(H-360)):(H+360); //handle H<0 or H>360 by adding or subtracting 360 so H can travel around the Hue circle in either direction
   hsi2rgbw(H,S,I,RGBWtemp);
   p_red = RGBWtemp[0];
   p_green = RGBWtemp[1];
@@ -337,6 +342,9 @@ void setup() {
   // init the MQTT connection
   client.setServer(MQTT_SERVER_IP, MQTT_SERVER_PORT);
   client.setCallback(callback);
+
+  //set PIR pin to input
+  pinMode(pirPin, INPUT);
 }
 
 void loop() {
@@ -347,20 +355,20 @@ void loop() {
   if(t_hsi_hue != m_hsi_hue || t_hsi_saturation != m_hsi_saturation || t_hsi_intensity != m_hsi_intensity) {
     if(t_hsi_hue != m_hsi_hue) {
       float huediff = t_hsi_hue - m_hsi_hue;
-      if(abs(huediff) < abs(t_hsi_hue_increment)) {
+      if(abs(huediff) < abs(t_hsi_hue_increment)) { //check if hue difference is less than increment, if so set hue directly to target
         m_hsi_hue = t_hsi_hue;
         t_hsi_hue_increment = 0;
       }
-      if (m_hsi_intensity == 0) {
+      if (m_hsi_intensity == 0) { //if light is off set hue directly (don't transition)
         m_hsi_hue = t_hsi_hue;
         t_hsi_hue_increment = 0;
       }
-      if (t_hsi_intensity == 0) {
+      if (t_hsi_intensity == 0) { //if light is going off keep hue the sam
         t_hsi_hue = m_hsi_hue;
         t_hsi_hue_increment = 0;
       }
     } else {
-      t_hsi_hue_increment = 0;
+      t_hsi_hue_increment = 0; //if we're not transitioning hue clean increment
     }
     if(t_hsi_saturation != m_hsi_saturation) {
       float satdiff = t_hsi_saturation - m_hsi_saturation;
@@ -395,6 +403,14 @@ void loop() {
       t_hsi_intensity_increment = 0;
     }
     activateColor(m_hsi_hue + t_hsi_hue_increment,m_hsi_saturation + t_hsi_saturation_increment,m_hsi_intensity + t_hsi_intensity_increment);
+  }
+  if(digitalRead(pirPin) != pirValue) {
+    pirValue = digitalRead(pirPin);
+    if(pirValue == HIGH) {
+      client.publish(MQTT_PIR_STATE_TOPIC, "ON", true);
+    } else {
+      client.publish(MQTT_PIR_STATE_TOPIC, "OFF", true);
+    }
   }
 }
 
@@ -441,24 +457,14 @@ void rgb2hsi(float r,float g, float b, float* hsi) {
   float H,S,I;
   float SMinTemp, SMin;
   I = (r/255)+(g/255)+(b/255);
-  if(I > 1) {
-    I=1;
-  }
-  if(I < 0) {
-    I=0;
-  }
+  I = I>0?(I<1?I:1):0; //clamp I to 0-1
   if(I==0) {
     S = 0;
   } else {
     SMinTemp = min(r,g);
     SMin = min(SMinTemp,b);
     S = 1-(SMin/255*3/I);
-    if(S > 1) {
-      S = 1;
-    }
-    if(S < 0) {
-      S = 0;
-    }
+    S = S>0?(S<1?S:1):0; //clamp S to 0-1
   }
 
   if(r!=g || g!=b) {

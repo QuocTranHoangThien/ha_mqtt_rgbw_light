@@ -29,10 +29,20 @@ light:
   rgb_command_topic: 'kitchen/rgbw1/rgb/set'
   brightness_scale: 4095
   optimistic: false
+  
+binary_sensor:
+  platform: mqtt
+  state_topic: "kitchen/pir/status"
+  name: "Kitchen Motion"
+  qos: 0
+  payload_on: "ON"
+  payload_off: "OFF"
+  sendor_class: motion
 ```
 
-##Unreasonably Mundane - v0.2 - 2017/01
+##Unreasonably Mundane - v0.21 - 2017/01
 ##ToDo:
 - Major code cleanup
-- Add Motion Sensor as seperate MQTT sensor
+- Add local operation mode(s) if MQTT fails
+- ~~Add Motion Sensor as seperate MQTT sensor~~
 - ~~Shortest transition path for Hue~~

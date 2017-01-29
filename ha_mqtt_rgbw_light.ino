@@ -25,7 +25,7 @@
       rgb_command_topic: 'kitchen/rgbw1/rgb/set'
       brightness_scale: 4095
       optimistic: false
-	binary_sensor:
+    binary_sensor:
       platform: mqtt
       state_topic: "kitchen/pir/status"
       name: "Kitchen Motion"
